@@ -1,114 +1,70 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.svm import SVC
+import pickle
+import json
+
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import plot_confusion_matrix, plot_roc_curve, plot_precision_recall_curve
-from sklearn.metrics import precision_score, recall_score 
+from sklearn.metrics import precision_score, recall_score
 
 def main():
-    st.title("Binary Classification Web App")
-    st.sidebar.title("Binary Classification Web App")
-    st.markdown("Are your mushroom edible or Piosonous ? 🍄")
-    st.sidebar.markdown("Are your mushroom edible or Piosonous ? 🍄")
+    st.title("Schema Matching Web App")
+    st.markdown("Please upload your spreadsheet in the sidebar!")
+    st.sidebar.title("Schema Matching Spreadsheet Upload")
+    st.sidebar.markdown("Please upload below!")
 
-    @st.cache(persist=True)
-    def load_data():
-        data=pd.read_csv('mushrooms.csv')
-        label = LabelEncoder()
-        for col in data.columns:
-            data[col] = label.fit_transform(data[col])
-        return data
-        
-    @st.cache(persist=True)
-    def split(df):
-        y = df.type
-        x = df.drop(columns = ['type'])
-        x_train,x_test,y_train,y_test = train_test_split(x,y,test_size = 0.3, random_state = 0)
-        return x_train,x_test,y_train,y_test
-    def plot_metrics(matrics_list):
-        if 'Confusion Matrix' in matrics_list:
-            st.subheader("Confusion Matrix")
-            plot_confusion_matrix(model, x_test,y_test, display_labels = class_names)
-            st.pyplot()
-        if 'ROC Curve' in matrics_list:
-            st.subheader("ROC Curve")
-            plot_roc_curve(model, x_test,y_test)
-            st.pyplot()
-        if 'Precision-Recall Curve' in matrics_list:
-            st.subheader("Precision Recall")
-            plot_precision_recall_curve(model,x_test,y_test)
-            st.pyplot()
+    #uploads the csv file
+    st.sidebar.subheader("Upload a File")
+    st.set_option('deprecation.showfileUploaderEncoding', False)
 
-    df = load_data()
-    x_train,x_test,y_train,y_test = split(df)
-    class_names = ['edible','poisonous']
-    st.sidebar.subheader("Choose Classifier")
-    classifier = st.sidebar.selectbox("Classifier",("Support Vector Machine (SVM)","Logistic regression","Random Forest"))
+    #Here are the two forms of text we can use
+    st.subheader("How does this work?")
+    st.text("Here is a paragraph of text that explains what this service does.")
 
-    if classifier == 'Support Vector Machine (SVM)':
-        st.sidebar.subheader("Model Hyperparameters")
-        C = st.sidebar.number_input("C (Regularization parameter)", 0.01,10.0,step=0.01,key='C')
-        kernel = st.sidebar.radio("Kernel",("rbf","linear"),key = 'kernel')
-        gamma = st.sidebar.radio("Gamma (Kernel Cofficient)",("scale","auto"),key='gamma')
+    uploaded_file = st.sidebar.file_uploader("Choose a file", type=['csv'])
 
-        metrics = st.sidebar.multiselect("What metrices to plot?", ('Confusion Matrix','ROC Curve','Precision-Recall Curve'))
+    if st.sidebar.button("Classify", key='classify'):
+        #make this a dataframe - convert the uploaded file to csv to a dataframe
+        output = evaluate(uploaded_file)
+        st.write(output)
 
-        if st.sidebar.button("Classify", key='classify'):
-            st.subheader("Support Vector Machine (SVM) Results")
-            model = SVC(C=C,kernel=kernel,gamma=gamma)
-            model.fit(x_train,y_train)
-            accuracy = model.score(x_test,y_test)
-            y_pred = model.predict(x_test)
-            st.write("Accuracy: ", accuracy.round(2))
-            st.write("Precission: ",precision_score(y_test,y_pred,labels=class_names).round(2))
-            st.write("Recall: ",recall_score(y_test,y_pred,labels=class_names).round(2))
-            plot_metrics(metrics)
+def evaluate(uploaded_file):
+    test_data = pd.read_csv(uploaded_file)
+    test_data = test_data.dropna(thresh=len(test_data.index)/2, axis='columns')
+            # pre-processing input data, remove columns with empty name
+    test_data = test_data.loc[:, ~test_data.columns.str.contains('^Unnamed')]
+    test_data = test_data.astype(str)   # convert all labels to str, mod 7/8rip()
 
-    if classifier == 'Logistic regression':
-        st.sidebar.subheader("Model Hyperparameters")
-        C = st.sidebar.number_input("C (Regularization parameter)", 0.01,10.0,step=0.01,key='C_LR')
-        max_iter = st.sidebar.slider("Maximum number of iterations", 100,500,key='max_iter')
+            # pre-processing input data, remove columns with empty name
+    test_data = test_data[test_data.columns.dropna()]  # drop col w/o no header
+    test_data.columns = test_data.columns.str.strip()     # remove space b/a header
 
-        metrics = st.sidebar.multiselect("What metrices to plot?", ('Confusion Matrix','ROC Curve','Precision-Recall Curve'))
+    # capitalize all the labels
+    for i in range(len(test_data.iloc[-1,:])):
+        s = test_data.iloc[-1,i]
+        lst = [word[0].upper() + word[1:] for word in s.split()]
+        test_data.iloc[-1,i] = " ".join(lst)
+            # extract the label, which is the last row
+    label = test_data.tail(1).to_dict('records')[0]
 
-        if st.sidebar.button("Classify", key='classify'):
-            st.subheader("Logistic regression Results")
-            model = LogisticRegression(C=C,max_iter=max_iter)
-            model.fit(x_train,y_train)
-            accuracy = model.score(x_test,y_test)
-            y_pred = model.predict(x_test)
-            st.write("Accuracy: ", accuracy.round(2))
-            st.write("Precission: ",precision_score(y_test,y_pred,labels=class_names).round(2))
-            st.write("Recall: ",recall_score(y_test,y_pred,labels=class_names).round(2))
-            plot_metrics(metrics)
+            # drop the label if it is exists. otherwise drop the last row
+    test_data = test_data.drop(test_data.tail(1).index)
+            # test_data = test_data.astype(str)
+            # test_data = test_data.fillna("NA")
+            # test_data.columns = test_data.columns.str.strip()
 
-    if classifier == 'Random Forest':
-        st.sidebar.subheader("Model Hyperparameters")
-        n_estimators=st.sidebar.number_input("The number of trees in the forest",100,5000,step = 10,key='n_estimator')
-        max_depth = st.sidebar.number_input("The maximum depth",1,20,step=1,key="max_depth")
-        bootstrap = st.sidebar.radio("Bootstrap samples ",('True','False'),key='bootstrap')
+    loaded_model = pickle.load(open('matcher1.model', 'rb'))
+    predicted_output = loaded_model.make_prediction(test_data)
+    predicted_mapping = {}
+    for k,v in predicted_output.items():
+        predicted_mapping[k] = v[0]
 
-        metrics = st.sidebar.multiselect("What metrices to plot?", ('Confusion Matrix','ROC Curve','Precision-Recall Curve'))
+    json_output = json.dumps(predicted_output, indent=4)
+    return json_output
 
-        if st.sidebar.button("Classify", key='classify'):
-            st.subheader("Random Forest Results")
-            model = RandomForestClassifier(n_estimators=n_estimators,max_depth=max_depth,bootstrap=bootstrap,n_jobs=-1)
-            model.fit(x_train,y_train)
-            accuracy = model.score(x_test,y_test)
-            y_pred = model.predict(x_test)
-            st.write("Accuracy: ", accuracy.round(2))
-            st.write("Precission: ",precision_score(y_test,y_pred,labels=class_names).round(2))
-            st.write("Recall: ",recall_score(y_test,y_pred,labels=class_names).round(2))
-            plot_metrics(metrics)
 
-    if st.sidebar.checkbox("Show raw data ",False):
-        st.subheader("Mushroom Data Set (Classification)")
-        st.write(df)
-
-        
 if __name__ == '__main__':
     main()
+
